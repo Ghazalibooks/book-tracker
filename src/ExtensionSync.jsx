@@ -1,177 +1,142 @@
-// EXTENSION SYNC COMPONENT - Add to Web App
-// This component enables the extension to use the web app's authentication
-
-import { useEffect, useState } from 'react';
+﻿import { useState, useEffect } from 'react';
 import { auth } from './firebase';
-import { X, Chrome, Check, AlertCircle } from 'lucide-react';
 
 export function ExtensionSync({ user }) {
-  const [extensionInstalled, setExtensionInstalled] = useState(false);
+  const [extensionDetected, setExtensionDetected] = useState(false);
   const [synced, setSynced] = useState(false);
-  const [showBanner, setShowBanner] = useState(true);
+  const [syncing, setSyncing] = useState(false);
 
   useEffect(() => {
-    checkExtension();
-  }, []);
-
-  useEffect(() => {
-    if (user && extensionInstalled) {
-      syncAuthToExtension();
-    }
-  }, [user, extensionInstalled]);
-
-  // Check if extension is installed
-  const checkExtension = () => {
-    // Extension will set a flag in localStorage when loaded
-    const hasExtension = localStorage.getItem('bookyo-extension-installed');
-    setExtensionInstalled(!!hasExtension);
+    console.log('🔍 ExtensionSync mounted! User:', user?.email);
     
-    // Listen for extension messages
-    window.addEventListener('message', (event) => {
-      if (event.data.type === 'BOOKYO_EXTENSION_PING') {
-        setExtensionInstalled(true);
-        localStorage.setItem('bookyo-extension-installed', 'true');
+    // Force detect after short delay
+    setTimeout(() => {
+      console.log('🔍 Checking for extension...');
+      const hasExtension = localStorage.getItem('bookyo-extension-enabled') === 'true';
+      console.log('🔍 localStorage check:', hasExtension);
+      
+      if (hasExtension) {
+        console.log('📡 Extension detected via localStorage!');
+        setExtensionDetected(true);
+      } else {
+        console.log('⚠️ Extension not detected in localStorage');
       }
-    });
-  };
+    }, 500);
 
-  // Sync authentication to extension
-  const syncAuthToExtension = async () => {
-    if (!user) return;
+    const handleMessage = (event) => {
+      console.log('📨 Message received:', event.data.type);
+      
+      if (event.data.type === 'BOOKYO_EXTENSION_PING') {
+        console.log('📡 Extension detected via ping!');
+        setExtensionDetected(true);
+      }
+      
+      if (event.data.type === 'BOOKYO_EXTENSION_SYNCED') {
+        console.log('✅ Extension synced!');
+        setSynced(true);
+        setSyncing(false);
+      }
+    };
+
+    window.addEventListener('message', handleMessage);
+    
+    // Ping the extension
+    console.log('📤 Sending ping to extension...');
+    window.postMessage({ type: 'BOOKYO_APP_PING' }, '*');
+
+    return () => {
+      window.removeEventListener('message', handleMessage);
+    };
+  }, [user]);
+
+  const handleSync = async () => {
+    if (!user || syncing) return;
 
     try {
-      // Get Firebase ID token
+      setSyncing(true);
+      console.log('🔄 Syncing extension...');
+
       const token = await auth.currentUser.getIdToken();
-      
-      // Send to extension via postMessage
+
       window.postMessage({
         type: 'BOOKYO_AUTH_TOKEN',
         token: token,
         user: {
           uid: user.uid,
           email: user.email,
-          displayName: user.displayName
+          displayName: user.displayName || user.email
         }
       }, '*');
 
-      setSynced(true);
-      console.log('✅ Auth synced to extension');
+      console.log('✅ Auth token sent to extension');
     } catch (error) {
       console.error('❌ Sync error:', error);
+      setSyncing(false);
+      alert('Failed to sync extension');
     }
   };
 
-  // Manual sync button
-  const handleManualSync = async () => {
-    await syncAuthToExtension();
-  };
+  console.log('🎨 Rendering ExtensionSync. Detected:', extensionDetected);
 
-  if (!user) return null;
-  if (!showBanner) return null;
+  if (!extensionDetected) {
+    return null;
+  }
 
   return (
     <div style={{
       position: 'fixed',
-      top: 80,
+      top: 20,
       right: 20,
-      zIndex: 1000,
-      maxWidth: 350,
+      zIndex: 10000,
+      background: synced ? 'linear-gradient(135deg, #10b981 0%, #059669 100%)' : 'linear-gradient(135deg, #f59e0b 0%, #d97706 100%)',
+      color: 'white',
+      padding: '12px 20px',
+      borderRadius: '10px',
+      boxShadow: '0 4px 12px rgba(0,0,0,0.2)',
+      display: 'flex',
+      alignItems: 'center',
+      gap: '12px',
+      fontFamily: '-apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif',
+      fontSize: '14px',
+      fontWeight: '600'
     }}>
-      <div className="cozy-card" style={{
-        padding: 16,
-        background: extensionInstalled && synced 
-          ? 'linear-gradient(135deg, #4CAF50 0%, #45a049 100%)'
-          : extensionInstalled
-          ? 'linear-gradient(135deg, #FF9800 0%, #F57C00 100%)'
-          : 'linear-gradient(135deg, #667eea 0%, #764ba2 100%)',
-        position: 'relative'
-      }}>
-        <button
-          onClick={() => setShowBanner(false)}
-          style={{
-            position: 'absolute',
-            top: 8,
-            right: 8,
-            background: 'rgba(255,255,255,0.2)',
-            border: 'none',
-            borderRadius: '50%',
-            width: 24,
-            height: 24,
-            cursor: 'pointer',
-            display: 'flex',
-            alignItems: 'center',
-            justifyContent: 'center',
-            color: 'white'
-          }}
-        >
-          <X size={16} />
-        </button>
-
-        <div style={{ display: 'flex', alignItems: 'center', gap: 12, marginBottom: 12 }}>
-          <Chrome size={32} />
+      {synced ? (
+        <>
+          <span>✅</span>
           <div>
-            <div style={{ fontWeight: 'bold', fontSize: 16 }}>
-              {extensionInstalled && synced ? '✅ Extension Synced' : 
-               extensionInstalled ? '🔄 Extension Detected' : 
-               '📥 Extension Available'}
+            <div>Extension Synced!</div>
+            <div style={{ fontSize: '12px', opacity: 0.9, fontWeight: 'normal' }}>
+              {user.email}
             </div>
           </div>
-        </div>
-
-        {!extensionInstalled && (
-          <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 12 }}>
-            Install the Bookyo extension to quickly add books from any website!
+        </>
+      ) : (
+        <>
+          <span>🔄</span>
+          <div>
+            <div>Extension Detected</div>
+            <div style={{ fontSize: '12px', opacity: 0.9, fontWeight: 'normal' }}>
+              Click to sync
+            </div>
           </div>
-        )}
-
-        {extensionInstalled && !synced && (
-          <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 12 }}>
-            Click to sync your account with the extension
-          </div>
-        )}
-
-        {extensionInstalled && synced && (
-          <div style={{ fontSize: 13, opacity: 0.9, marginBottom: 12 }}>
-            Your extension is connected and syncing!
-          </div>
-        )}
-
-        {extensionInstalled && !synced && (
           <button
-            onClick={handleManualSync}
-            className="btn-main"
+            onClick={handleSync}
+            disabled={syncing}
             style={{
-              width: '100%',
-              background: 'rgba(255,255,255,0.25)',
-              padding: '10px'
+              background: 'white',
+              color: '#f59e0b',
+              border: 'none',
+              borderRadius: '6px',
+              padding: '8px 16px',
+              fontWeight: 'bold',
+              cursor: syncing ? 'not-allowed' : 'pointer',
+              fontSize: '13px'
             }}
           >
-            Sync Now
+            {syncing ? '⏳ Syncing...' : 'Sync Now'}
           </button>
-        )}
-
-        {!extensionInstalled && (
-          <a
-            href="https://chrome.google.com/webstore" // Update with actual extension URL when published
-            target="_blank"
-            rel="noopener noreferrer"
-            className="btn-main"
-            style={{
-              width: '100%',
-              background: 'rgba(255,255,255,0.25)',
-              padding: '10px',
-              textAlign: 'center',
-              textDecoration: 'none',
-              display: 'block'
-            }}
-          >
-            Get Extension
-          </a>
-        )}
-      </div>
+        </>
+      )}
     </div>
   );
 }
-
-// Add this to App.jsx after login:
-// {user && <ExtensionSync user={user} />}
